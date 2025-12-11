@@ -619,7 +619,12 @@ fn collect_files(path: &PathBuf) -> Result<Vec<PathBuf>> {
 
     let mut files = Vec::new();
 
-    for entry in WalkBuilder::new(path).hidden(true).git_ignore(true).build() {
+    for entry in WalkBuilder::new(path)
+        .hidden(true)
+        .add_custom_ignore_filename(".osgrepignore")
+        .git_ignore(true)
+        .build()
+    {
         let entry = entry?;
         if entry.file_type().map(|t| t.is_file()).unwrap_or(false) {
             let path = entry.path();
