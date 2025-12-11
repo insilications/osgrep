@@ -653,6 +653,7 @@ fn is_code_file(path: &std::path::Path) -> bool {
             | "hpp"
             | "java"
             | "kt"
+            | "kts"
             | "swift"
             | "rb"
             | "php"

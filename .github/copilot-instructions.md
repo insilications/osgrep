@@ -1,0 +1,38 @@
+# osgrep – Agent Notes
+
+- **Architecture**
+  - Workspace crates: Rust CLI [cli/src/main.rs](../cli/src/main.rs#L15-L492); MCP bridge that shells to the CLI [mcp/src/main.rs](../mcp/src/main.rs#L1-L189); Node/N-API addon [native/src/lib.rs](../native/src/lib.rs#L1-L246) with optional SQLite and Candle modules [native/src/vector_store.rs](../native/src/vector_store.rs#L1-L230) and [native/src/embeddings.rs](../native/src/embeddings.rs#L1-L210). Release builds target sqlite,parallel features per [/.github/workflows/rust-release.yml](../.github/workflows/rust-release.yml).
+- **Index pipeline (CLI)**
+  - `cmd_index` canonicalizes the path, chooses a store name, opens the DB under `~/.osgrep/data/osgrep.db`, walks files honoring `.gitignore` and `.osgrepignore`, chunks, embeds, then batches inserts [cli/src/main.rs](../cli/src/main.rs#L156-L343) and [cli/src/main.rs](../cli/src/main.rs#L610-L705).
+  - File discovery uses `ignore::WalkBuilder` with `.osgrepignore` support [cli/src/main.rs#L618-L647](../cli/src/main.rs#L618-L647); candidate file extensions are whitelisted for code/text [cli/src/main.rs#L649-L702](../cli/src/main.rs#L649-L702).
+  - Chunking prefers tree-sitter per language and injects an anchor chunk of imports/signatures before semantic chunks; falls back to overlapping line blocks when needed [cli/src/chunker.rs](../cli/src/chunker.rs#L22-L183).
+  - Embedding batches remote API calls (OpenAI-compatible) in groups of 10 with a 100ms pause to avoid rate limits [cli/src/embeddings.rs#L211-L276](../cli/src/embeddings.rs#L211-L276).
+  - Vectors and records are inserted in batches of 500 to SQLite-Vec [cli/src/main.rs#L302-L338](../cli/src/main.rs#L302-L338).
+  - Optional watch mode reindexes changed code files via `notify` [cli/src/main.rs#L523-L577](../cli/src/main.rs#L523-L577).
+- **Search pipeline (CLI)**
+  - `cmd_search` embeds the query with an instruction prefix and searches SQLite-Vec; supports human, JSON, or TOON (LLM-friendly) output [cli/src/main.rs#L344-L420](../cli/src/main.rs#L344-L420).
+  - SIMD/info reporting lives in [cli/src/simd.rs](../cli/src/simd.rs#L1-L82) and is surfaced by `osgrep info` [cli/src/main.rs#L430-L473](../cli/src/main.rs#L430-L473).
+- **Configuration & embeddings**
+  - Config is loaded once from `~/.osgrep/config.json` or env vars; helpers live in [cli/src/config.rs](../cli/src/config.rs#L12-L145). `osgrep config --init` writes a sample file; `--path` prints the location.
+  - Remote embeddings require provider (`openrouter`/`openai`/`remote`) and API key; defaults to model `openai/text-embedding-3-small`, base URL `https://openrouter.ai/api/v1`, and dimensions 1536 unless overridden [cli/src/embeddings.rs#L18-L107](../cli/src/embeddings.rs#L18-L107).
+  - `embeddings::init` exits early if config is missing and warns about Gemini model quirks [cli/src/embeddings.rs#L211-L244](../cli/src/embeddings.rs#L211-L244).
+- **Storage**
+  - SQLite connections are pooled in a global `OnceLock` map; tables are created per store with chunk metadata, FTS5, and a sqlite-vec table pinned to `float[768]` embeddings [cli/src/store.rs](../cli/src/store.rs#L23-L171).
+  - The 768-d vector schema currently mismatches the default 1536-d remote embeddings; pick a 768-d model or adjust schema and migration before changing embedding dims.
+  - `store::search` returns similarity as `1 - distance` and supports optional path prefix filtering [cli/src/store.rs#L132-L170](../cli/src/store.rs#L132-L170).
+- **MCP server**
+  - Exposes `semantic_search`, `index_directory`, and `get_simd_info` MCP tools; each shells out to the installed `osgrep` binary [mcp/src/main.rs#L37-L156](../mcp/src/main.rs#L37-L156). Ensure the CLI is on PATH when running MCP.
+- **Native addon**
+  - N-API surface offers SIMD-aware dot products, score helpers, optional sqlite vector store, and optional Candle embeddings; features are opt-in (`parallel`, `embeddings`, `metal`, `sqlite`, `full`) [native/src/lib.rs#L1-L246](../native/src/lib.rs#L1-L246).
+  - Build via `napi build --platform --release` with feature flags (e.g., `--features full` or `--features sqlite,parallel`); scripts are defined in [native/package.json](../native/package.json).
+- **Build/Test workflows**
+  - Common commands: `cargo build --release -p osgrep --features sqlite,parallel`, `cargo build --release -p osgrep-mcp`, `cargo test`, `cargo fmt --all`, `cargo clippy -p osgrep -p osgrep-mcp --features sqlite,parallel -- -D warnings` (matches CI).
+  - Release CI packages binaries for macOS (arm64/x64), Linux x64, and Windows x64 [/.github/workflows/rust-release.yml](../.github/workflows/rust-release.yml).
+  - The `tests/` folder contains legacy Vitest specs for a TypeScript CLI that is not present in this workspace; running `vitest` will fail until that JS code is restored.
+- **Data locations & defaults**
+  - SQLite DB lives at `~/.osgrep/data/osgrep.db`; stores are namespaced by store id [cli/src/main.rs#L610-L647](../cli/src/main.rs#L610-L647).
+  - Indexing deletes and rewrites per-file chunks before inserting new ones to keep the store consistent [cli/src/main.rs#L186-L257](../cli/src/main.rs#L186-L257).
+- **Gotchas**
+  - No local embedding fallback: everything depends on a configured remote provider; commands will error fast if `OSGREP_EMBEDDING_API_KEY` (or config file) is missing.
+  - TOON output escapes commas/newlines and truncates content, meant for LLM consumption [cli/src/main.rs#L380-L407](../cli/src/main.rs#L380-L407).
+  - `cmd_list` currently only prints a stub; add metadata queries in `store` before exposing richer listings [cli/src/main.rs#L422-L429](../cli/src/main.rs#L422-L429).
