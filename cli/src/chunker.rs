@@ -15,6 +15,26 @@ pub struct Chunk {
     pub is_anchor: bool,
 }
 
+pub enum ChunkKind {
+    Anchor,
+    Semantic,
+    Fallback,
+}
+
+pub struct DebugChunk {
+    pub text: String,
+    pub start_line: usize,
+    pub end_line: usize,
+    pub kind: ChunkKind,
+}
+
+pub struct DebugResult {
+    pub language: Option<&'static str>,
+    pub used_tree_sitter: bool,
+    pub fallback_reason: Option<String>,
+    pub chunks: Vec<DebugChunk>,
+}
+
 const MAX_CHUNK_LINES: usize = 50;
 const MIN_CHUNK_LINES: usize = 5;
 
@@ -23,7 +43,7 @@ pub fn chunk(path: &Path, content: &str) -> Result<Vec<Chunk>> {
     let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
     let language = get_language(ext);
 
-    if let Some(lang) = language {
+    if let Some((_, lang)) = language {
         chunk_with_treesitter(content, lang)
     } else {
         // Fallback to line-based chunking
@@ -31,17 +51,89 @@ pub fn chunk(path: &Path, content: &str) -> Result<Vec<Chunk>> {
     }
 }
 
-fn get_language(ext: &str) -> Option<Language> {
+pub fn chunk_debug(path: &Path, content: &str) -> Result<DebugResult> {
+    let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
+    let language = get_language(ext);
+
+    if let Some((lang_name, lang)) = language {
+        match chunk_with_treesitter(content, lang) {
+            Ok(chunks) => {
+                let debug_chunks = chunks
+                    .into_iter()
+                    .map(|c| DebugChunk {
+                        text: c.text,
+                        start_line: c.start_line,
+                        end_line: c.end_line,
+                        kind: if c.is_anchor {
+                            ChunkKind::Anchor
+                        } else {
+                            ChunkKind::Semantic
+                        },
+                    })
+                    .collect();
+
+                Ok(DebugResult {
+                    language: Some(lang_name),
+                    used_tree_sitter: true,
+                    fallback_reason: None,
+                    chunks: debug_chunks,
+                })
+            }
+            Err(err) => {
+                let line_chunks = chunk_by_lines(content)?
+                    .into_iter()
+                    .map(|c| DebugChunk {
+                        text: c.text,
+                        start_line: c.start_line,
+                        end_line: c.end_line,
+                        kind: ChunkKind::Fallback,
+                    })
+                    .collect();
+
+                Ok(DebugResult {
+                    language: Some(lang_name),
+                    used_tree_sitter: false,
+                    fallback_reason: Some(format!("tree-sitter failed: {err}")),
+                    chunks: line_chunks,
+                })
+            }
+        }
+    } else {
+        let line_chunks = chunk_by_lines(content)?
+            .into_iter()
+            .map(|c| DebugChunk {
+                text: c.text,
+                start_line: c.start_line,
+                end_line: c.end_line,
+                kind: ChunkKind::Fallback,
+            })
+            .collect();
+
+        Ok(DebugResult {
+            language: None,
+            used_tree_sitter: false,
+            fallback_reason: Some(
+                "extension not recognized; using line-based chunking".to_string(),
+            ),
+            chunks: line_chunks,
+        })
+    }
+}
+
+fn get_language(ext: &str) -> Option<(&'static str, Language)> {
     match ext {
-        "rs" => Some(tree_sitter_rust::LANGUAGE.into()),
-        "js" | "jsx" | "mjs" => Some(tree_sitter_javascript::LANGUAGE.into()),
-        "ts" | "tsx" => Some(tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into()),
-        "py" => Some(tree_sitter_python::LANGUAGE.into()),
-        "go" => Some(tree_sitter_go::LANGUAGE.into()),
-        "c" | "h" => Some(tree_sitter_c::LANGUAGE.into()),
-        "cpp" | "hpp" | "cc" | "cxx" => Some(tree_sitter_cpp::LANGUAGE.into()),
-        "java" => Some(tree_sitter_java::LANGUAGE.into()),
-        "kt" | "kts" => Some(tree_sitter_kotlin_updated::language()),
+        "rs" => Some(("Rust", tree_sitter_rust::LANGUAGE.into())),
+        "js" | "jsx" | "mjs" => Some(("JavaScript", tree_sitter_javascript::LANGUAGE.into())),
+        "ts" | "tsx" => Some((
+            "TypeScript",
+            tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into(),
+        )),
+        "py" => Some(("Python", tree_sitter_python::LANGUAGE.into())),
+        "go" => Some(("Go", tree_sitter_go::LANGUAGE.into())),
+        "c" | "h" => Some(("C", tree_sitter_c::LANGUAGE.into())),
+        "cpp" | "hpp" | "cc" | "cxx" => Some(("C++", tree_sitter_cpp::LANGUAGE.into())),
+        "java" => Some(("Java", tree_sitter_java::LANGUAGE.into())),
+        "kt" | "kts" => Some(("Kotlin", tree_sitter_kotlin_updated::language())),
         _ => None,
     }
 }

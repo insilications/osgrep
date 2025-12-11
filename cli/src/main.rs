@@ -118,6 +118,21 @@ enum Commands {
         #[arg(long)]
         reset: bool,
     },
+
+    /// Debug helpers
+    Debug {
+        #[command(subcommand)]
+        command: DebugCommands,
+    },
+}
+
+#[derive(Subcommand)]
+enum DebugCommands {
+    /// Debug smart chunking for a file
+    Chunker {
+        /// Path to the file to chunk
+        file: PathBuf,
+    },
 }
 
 fn main() -> Result<()> {
@@ -150,6 +165,9 @@ fn main() -> Result<()> {
             path,
             reset,
         } => cmd_config(provider, api_key, model, base_url, show, init, path, reset),
+        Commands::Debug { command } => match command {
+            DebugCommands::Chunker { file } => cmd_debug_chunker(file),
+        },
     }
 }
 
@@ -602,6 +620,60 @@ fn cmd_config(
     }
     if base_url.is_some() {
         println!("  base_url: {}", base_url.unwrap());
+    }
+
+    Ok(())
+}
+
+fn cmd_debug_chunker(file: PathBuf) -> Result<()> {
+    let content = std::fs::read_to_string(&file)
+        .with_context(|| format!("Failed to read file: {}", file.display()))?;
+
+    let debug = chunker::chunk_debug(&file, &content)?;
+
+    println!(
+        "{} Debugging chunker for {}",
+        style("→").cyan(),
+        file.display()
+    );
+    println!(
+        "{} Language: {}",
+        style("✓").green(),
+        debug.language.unwrap_or("unknown")
+    );
+    println!(
+        "{} Mode: {}",
+        style("✓").green(),
+        if debug.used_tree_sitter {
+            "tree-sitter"
+        } else {
+            "line-based fallback"
+        }
+    );
+
+    if let Some(reason) = &debug.fallback_reason {
+        println!("{} {}", style("!").yellow(), reason);
+    }
+
+    println!("{} Chunks: {}", style("✓").green(), debug.chunks.len());
+
+    for (i, chunk) in debug.chunks.iter().enumerate() {
+        let label = match chunk.kind {
+            chunker::ChunkKind::Anchor => "anchor",
+            chunker::ChunkKind::Semantic => "semantic",
+            chunker::ChunkKind::Fallback => "fallback",
+        };
+
+        println!(
+            "\n{} {} [{}-{}] ({} bytes)",
+            style(format!("Chunk {}", i + 1)).cyan(),
+            label,
+            chunk.start_line,
+            chunk.end_line,
+            chunk.text.len()
+        );
+
+        println!("{}", chunk.text);
     }
 
     Ok(())
