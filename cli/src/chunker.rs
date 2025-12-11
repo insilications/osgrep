@@ -41,6 +41,7 @@ fn get_language(ext: &str) -> Option<Language> {
         "c" | "h" => Some(tree_sitter_c::LANGUAGE.into()),
         "cpp" | "hpp" | "cc" | "cxx" => Some(tree_sitter_cpp::LANGUAGE.into()),
         "java" => Some(tree_sitter_java::LANGUAGE.into()),
+        "kt" | "kts" => Some(tree_sitter_kotlin_updated::language()),
         _ => None,
     }
 }
