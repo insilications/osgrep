@@ -281,7 +281,7 @@ osgrep doctor
 osgrep is designed to be a "good citizen" on your machine:
 
 1.  **The Thermostat:** Indexing adjusts concurrency in real-time based on memory pressure and CPU speed. It won't freeze your laptop.
-2.  **Smart Chunking:** Uses `tree-sitter` to split code by function/class boundaries, ensuring embeddings capture complete logical blocks.
+2.  **Smart Chunking:** Uses `tree-sitter` to split code by function/class boundaries (Rust, JS/TS, Python, Go, C/C++, Java, Kotlin, Swift, Ruby, PHP, C#, Scala, Zig, Lua, shells, HTML/CSS/JSON/YAML/TOML), ensuring embeddings capture complete logical blocks.
 3.  **Deduplication:** Identical code blocks (boilerplate, license headers) are embedded once and cached, saving space and time.
 4.  **Hybrid Search:** Uses Reciprocal Rank Fusion (RRF) to combine Vector Search (semantic) with FTS (keyword) for best-of-both-worlds accuracy.
 

@@ -91,6 +91,7 @@ fn extract_chunks(
     // Check if this is a significant node (function, class, etc.)
     let is_significant = matches!(
         kind,
+        // Generic/classic languages
         "function_definition"
             | "function_item"
             | "function_declaration"
@@ -104,6 +105,19 @@ fn extract_chunks(
             | "trait_item"
             | "module"
             | "namespace_definition"
+            // Kotlin-specific constructs
+            | "type_alias"
+            | "object_declaration"
+            | "property_declaration"
+            | "companion_object"
+            | "anonymous_initializer"
+            | "secondary_constructor"
+            | "primary_constructor"
+            | "enum_entry"
+            | "anonymous_function"
+            | "lambda_literal"
+            | "object_literal"
+            | "constructor_delegation_call"
     );
 
     if is_significant {
@@ -157,23 +171,38 @@ fn create_anchor(_content: &str, lines: &[&str]) -> String {
     }
 
     // Add function/class signatures
+    let signature_prefixes = [
+        // Rust/Go/JS/TS/Python
+        "fn ",
+        "pub fn ",
+        "def ",
+        "async def ",
+        "function ",
+        "async function ",
+        "class ",
+        "struct ",
+        "interface ",
+        "trait ",
+        "impl ",
+        "type ",
+        // Kotlin
+        "fun ",
+        "suspend fun ",
+        "data class ",
+        "sealed class ",
+        "sealed interface ",
+        "enum class ",
+        "object ",
+        "companion object ",
+        "val ",
+        "var ",
+    ];
+
     let signatures: Vec<&str> = lines
         .iter()
         .filter(|l| {
             let l = l.trim();
-            (l.starts_with("fn ")
-                || l.starts_with("pub fn ")
-                || l.starts_with("def ")
-                || l.starts_with("async def ")
-                || l.starts_with("function ")
-                || l.starts_with("async function ")
-                || l.starts_with("class ")
-                || l.starts_with("struct ")
-                || l.starts_with("interface ")
-                || l.starts_with("trait ")
-                || l.starts_with("impl ")
-                || l.starts_with("type "))
-                && l.len() < 200
+            signature_prefixes.iter().any(|p| l.starts_with(p)) && l.len() < 200
         })
         .take(20)
         .copied()
